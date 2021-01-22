@@ -1,0 +1,10 @@
+version: 2.0
+shards:
+  json-typeof:
+    path: /git/desi/repos/cr-json-typeof
+    version: 0.0.1
+
+  tap:
+    path: /git/desi/repos/cr-tap
+    version: 0.0.1
+

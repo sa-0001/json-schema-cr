@@ -1,0 +1,19 @@
+name: json-schema
+version: 0.0.1
+authors:
+  - sa-0001
+description: |
+  JSON-Schema validator
+license: MIT
+
+crystal: 0.35.1
+
+dependencies:
+  json-typeof:
+    github: https://github.com/sa-0001/json-typeof-cr.git
+    version: ~> 0.0.1
+
+development_dependencies:
+  tap:
+    github: https://github.com/sa-0001/tap-cr.git
+    version: ~> 0.0.1
