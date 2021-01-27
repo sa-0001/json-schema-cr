@@ -11,7 +11,7 @@ Implemented keywords:
   * type
 * array
   * items
-  * (TODO) additionalItems
+  * additionalItems
   * minItems
   * maxItems
   * uniqueItems
@@ -23,15 +23,16 @@ Implemented keywords:
   * multipleOf
 * object
   * properties
-  * (TODO) additionalProperties
+  * additionalProperties
   * minProperties
   * maxProperties
   * (TODO) required
 * strings
-  * (TODO) format
+  * format
   * minLength
   * maxLength
-  * (TODO) pattern
+  * pattern
+    * includes regex for: date, date-time, email, hostname, ipv4, ipv6, time, uri, uuid
 * sub-schemas
   * allOf
   * anyOf

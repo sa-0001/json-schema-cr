@@ -94,9 +94,11 @@ class JsonSchema
 			# skip if not present in schema
 			next unless schema.as_h.has_key? name
 			
+			input_typeof = input ? input.typeof.to_s : "undefined"
+			
 			# check input type against operator.input_types
 			if types = config[:input_types]
-				ok = types.includes? input.typeof.to_s
+				ok = types.includes? input_typeof
 				( ok ? pass : fail ).push error_operator_input input_field, name, types
 				next if !ok
 			end
@@ -113,7 +115,7 @@ class JsonSchema
 					( ok ? pass : fail ).push error_enum input_field, schema[name].as_a
 				
 				when "nullable"
-					ok = schema[name].as_bool == true || input.typeof != JSON::Typeof::Null
+					ok = schema[name].as_bool == true || input_typeof != "null"
 					( ok ? pass : fail ).push error_nullable input_field, ok
 				
 				when "required"
@@ -124,23 +126,29 @@ class JsonSchema
 					is_nullable = schema.as_h.has_key?("nullable") && schema["nullable"].as_bool == true
 					
 					# special case: input type "integer" is also allowed for schema type "number"
-					is_integer = input.typeof == JSON::Typeof::Integer
+					is_integer = input_typeof == "integer"
 					
-					ok = schema[name] == input.typeof.to_s || is_integer && schema[name] == "number" || (is_nullable && input.typeof == JSON::Typeof::Null)
-					( ok ? pass : fail ).push error_type input_field, schema[name].to_s + (is_nullable ? "?" : ""), input.typeof.to_s
+					ok = schema[name].to_s == input_typeof || (is_integer && schema[name].to_s == "number") || (is_nullable && input_typeof == "null")
+					( ok ? pass : fail ).push error_type input_field, schema[name].to_s + (is_nullable ? "?" : ""), input_typeof
 				
 				# arrays
 				
 				when "items"
 					schema["items"].as_a.each_with_index do |val, key|
-						_validate val, input.as_a[key], pass, fail, %(#{schema_field}.items[#{key}]), %(#{input_field}[#{key}])
+						_validate val, input.not_nil!.as_a.fetch(key, nil), pass, fail, %(#{schema_field}.items[#{key}]), %(#{input_field}[#{key}])
 					end
 				when "additionalItems"
 					if schema[name].typeof == JSON::Typeof::Boolean && schema[name].as_bool == false
 						# may not contain more items than found in "items"
-						# TODO
+						schema_keys = schema.as_h.has_key?("items") ? ( 0 .. (schema["items"].as_a.size - 1) ).to_a : [] of Int32
+						input_keys = ( 0 .. (input.not_nil!.as_a.size - 1) ).to_a
+						
+						diff_keys = input_keys - schema_keys
+						
+						ok = diff_keys.empty?
+						( ok ? pass : fail ).push error_additional_items input_field, diff_keys
 					else
-						input.as_a.each_with_index do |val, key|
+						input.not_nil!.as_a.each_with_index do |val, key|
 							# skip items already defined in "items"
 							next if schema.as_h.has_key?("items") && !schema["items"].as_a.fetch(key, nil).nil?
 							
@@ -150,20 +158,20 @@ class JsonSchema
 				
 				when "minItems"
 					expect = schema[name].as_i
-					actual = input.as_a.size
+					actual = input.not_nil!.as_a.size
 					
 					ok = actual >= expect
 					( ok ? pass : fail ).push error_min_items input_field, expect, actual
 				when "maxItems"
 					expect = schema[name].as_i
-					actual = input.as_a.size
+					actual = input.not_nil!.as_a.size
 					
 					ok = actual <= expect
 					( ok ? pass : fail ).push error_max_items input_field, expect, actual
 				
 				when "uniqueItems"
-					item_count = input.as_a.size
-					unique_item_count = input.as_a.uniq.size
+					item_count = input.not_nil!.as_a.size
+					unique_item_count = input.not_nil!.as_a.uniq.size
 					
 					ok = schema[name].as_bool == false || item_count == unique_item_count
 					( ok ? pass : fail ).push error_unique_items input_field
@@ -174,7 +182,7 @@ class JsonSchema
 					is_exclusive = schema.as_h.has_key?("exclusiveMinimum") && schema["exclusiveMinimum"].as_bool == true
 					
 					expect = schema[name].typeof == JSON::Typeof::Integer ? schema[name].as_i.to_f64 : schema[name].as_f
-					actual = input.typeof == JSON::Typeof::Integer ? input.as_i.to_f64 : input.as_f
+					actual = input.not_nil!.typeof == JSON::Typeof::Integer ? input.not_nil!.as_i.to_f64 : input.not_nil!.as_f
 					
 					ok = is_exclusive ? (actual > expect) : (actual >= expect)
 					( ok ? pass : fail ).push error_minimum input_field, expect, actual, is_exclusive
@@ -183,14 +191,14 @@ class JsonSchema
 					is_exclusive = schema.as_h.has_key?("exclusiveMaximum") && schema["exclusiveMaximum"].as_bool == true
 					
 					expect = schema[name].typeof == JSON::Typeof::Integer ? schema[name].as_i.to_f64 : schema[name].as_f
-					actual = input.typeof == JSON::Typeof::Integer ? input.as_i.to_f64 : input.as_f
+					actual = input.not_nil!.typeof == JSON::Typeof::Integer ? input.not_nil!.as_i.to_f64 : input.not_nil!.as_f
 					
 					ok = is_exclusive ? (actual < expect) : (actual <= expect)
 					( ok ? pass : fail ).push error_maximum input_field, expect, actual, is_exclusive
 				
 				when "multipleOf"
 					expect = schema[name].typeof == JSON::Typeof::Integer ? schema[name].as_i.to_f64 : schema[name].as_f
-					actual = input.typeof == JSON::Typeof::Integer ? input.as_i.to_f64 : input.as_f
+					actual = input.not_nil!.typeof == JSON::Typeof::Integer ? input.not_nil!.as_i.to_f64 : input.not_nil!.as_f
 					
 					ok = actual % expect == 0
 					( ok ? pass : fail ).push error_multiple input_field, expect, actual
@@ -199,14 +207,20 @@ class JsonSchema
 				
 				when "properties"
 					schema["properties"].as_h.each do |key, val|
-						_validate val, input.as_h[key], pass, fail, %(#{schema_field}.properties.#{key}), %(#{input_field}.#{key})
+						_validate val, input.not_nil!.as_h.fetch(key, nil), pass, fail, %(#{schema_field}.properties.#{key}), %(#{input_field}.#{key})
 					end
 				when "additionalProperties"
 					if schema[name].typeof == JSON::Typeof::Boolean && schema[name].as_bool == false
 						# may not contain more properties than found in "properties"
-						# TODO
+						schema_keys = schema.as_h.has_key?("properties") ? schema["properties"].as_h.keys : [] of String
+						input_keys = input.not_nil!.as_h.keys
+						
+						diff_keys = input_keys - schema_keys
+						
+						ok = diff_keys.empty?
+						( ok ? pass : fail ).push error_additional_properties input_field, diff_keys
 					else
-						input.as_h.each do |key, val|
+						input.not_nil!.as_h.each do |key, val|
 							# skip properties already defined in "properties"
 							next if schema.as_h.has_key?("properties") && schema["properties"].as_h.has_key? key
 							
@@ -216,26 +230,53 @@ class JsonSchema
 				
 				when "minProperties"
 					expect = schema[name].as_i
-					actual = input.as_h.size
+					actual = input.not_nil!.as_h.size
 					
 					ok = actual >= expect
 					( ok ? pass : fail ).push error_min_properties input_field, expect, actual
 				when "maxProperties"
 					expect = schema[name].as_i
-					actual = input.as_h.size
+					actual = input.not_nil!.as_h.size
 					
 					ok = actual <= expect
 					( ok ? pass : fail ).push error_max_properties input_field, expect, actual
 				
 				# strings
 				
+				when "format"
+					# some taken from AJV: https://github.com/ajv-validator/ajv-formats
+					regex = case schema[name].as_s
+						when "binary"    then nil # informational
+						when "byte"      then nil # informational
+						when "date-time" then /^[\d]{4}-[0-1]\d-[0-3]\dT[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$/
+						when "date"      then /^[\d]{4}-[0-1]\d-[0-3]\d$/
+						when "email"     then /^[\w-\.]+@([\w-]+\.)+[\w-]+$/
+						when "hostname"  then /^([\w-]+\.)+[\w-]+$/
+						when "ipv4"      then /^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/
+						when "ipv6"      then /^((([0-9a-f]{1,4}:){7}([0-9a-f]{1,4}|:))|(([0-9a-f]{1,4}:){6}(:[0-9a-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9a-f]{1,4}:){5}(((:[0-9a-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9a-f]{1,4}:){4}(((:[0-9a-f]{1,4}){1,3})|((:[0-9a-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){3}(((:[0-9a-f]{1,4}){1,4})|((:[0-9a-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){2}(((:[0-9a-f]{1,4}){1,5})|((:[0-9a-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){1}(((:[0-9a-f]{1,4}){1,6})|((:[0-9a-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9a-f]{1,4}){1,7})|((:[0-9a-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))$/i
+						when "password"  then nil # informational
+						when "time"      then /^[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?$/
+						when "uri"       then /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/)?[^\s]*$/i
+						when "uuid"      then /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
+						else nil # informational
+					end
+					
+					ok = regex ? regex.matches?(input.not_nil!.as_s) : true
+					( ok ? pass : fail ).push error_format input_field, schema[name].as_s
+				
 				when "minLength"
-					ok = input.as_s.size >= schema[name].as_i
+					ok = input.not_nil!.as_s.size >= schema[name].as_i
 					( ok ? pass : fail ).push error_min_length input_field, schema[name].as_i
 				
 				when "maxLength"
-					ok = input.as_s.size <= schema[name].as_i
+					ok = input.not_nil!.as_s.size <= schema[name].as_i
 					( ok ? pass : fail ).push error_max_length input_field, schema[name].as_i
+				
+				when "pattern"
+					regex = Regex.new schema[name].as_s
+					
+					ok = regex.matches? input.not_nil!.as_s
+					( ok ? pass : fail ).push error_pattern input_field, schema[name].as_s
 				
 				# sub-schemas
 				
@@ -380,12 +421,20 @@ class JsonSchema
 		
 		# strings
 		
+		"format" => {
+			argument_types: [ "string" ],
+			input_types: [ "string" ],
+		},
 		"minLength" => {
 			argument_types: [ "integer" ],
 			input_types: [ "string" ],
 		},
 		"maxLength" => {
 			argument_types: [ "integer" ],
+			input_types: [ "string" ],
+		},
+		"pattern" => {
+			argument_types: [ "string" ],
 			input_types: [ "string" ],
 		},
 		
@@ -415,10 +464,6 @@ class JsonSchema
 		
 		# # object
 		# required
-		
-		# # string
-		# pattern
-		# format
 	}
 	
 	# schema
@@ -454,6 +499,9 @@ class JsonSchema
 	
 	# arrays
 	
+	def error_additional_items (field, keys)
+		%(field #{field.to_json}: does not allow additionalItems #{keys.join(",")})
+	end
 	def error_min_items (field, expect, actual)
 		%(field #{field.to_json}: #{actual} >= minimum items #{expect})
 	end
@@ -478,6 +526,9 @@ class JsonSchema
 	
 	# objects
 	
+	def error_additional_properties (field, keys)
+		%(field #{field.to_json}: does not allow additionalProperties #{keys.join(",")})
+	end
 	def error_min_properties (field, expect, actual)
 		%(field #{field.to_json}: #{actual} >= minimum properties #{expect})
 	end
@@ -487,11 +538,17 @@ class JsonSchema
 	
 	# strings
 	
+	def error_format (field, format)
+		%(field #{field.to_json}: does not match format "#{format}")
+	end
 	def error_min_length (field, len)
 		%(field #{field.to_json}: minimum length #{len})
 	end
 	def error_max_length (field, len)
 		%(field #{field.to_json}: maximum length #{len})
+	end
+	def error_pattern (field, pattern)
+		%(field #{field.to_json}: does not match pattern "#{pattern}")
 	end
 	
 	# sub-schemas

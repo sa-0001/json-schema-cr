@@ -280,11 +280,61 @@ Tap.test "json-schema" do |t|
 	t.test "arrays" do |t|
 		
 		t.test "items" do |t|
-			# TODO
+			schema = JsonSchema.new(%({
+				"items": [
+					{ "type": "boolean" },
+					{ "type": "integer" },
+					{ "type": "number" },
+					{ "type": "string" }
+				]
+			}))
+			
+			t.not_ok schema.validate(%([
+				true
+			])).valid
+			
+			t.ok schema.validate(%([
+				true,
+				123,
+				1.23,
+				"abc"
+			])).valid
 		end
 		
 		t.test "additionalItems" do |t|
-			# TODO
+			# no additional items are allowed, over those specified in "items"
+			schema = JsonSchema.new(%({
+				"items": [
+					{ "type": "string" }
+				],
+				"additionalItems": false
+			}))
+			
+			t.not_ok schema.validate(%(
+				[ "abc", "def" ]
+			)).valid
+			
+			t.ok schema.validate(%(
+				[ "abc" ]
+			)).valid
+			
+			# additional items are allowed, as long as they are integers
+			schema = JsonSchema.new(%({
+				"items": [
+					{ "type": "string" }
+				],
+				"additionalItems": {
+					"type": "integer"
+				}
+			}))
+			
+			t.not_ok schema.validate(%(
+				[ "abc", "def" ]
+			)).valid
+			
+			t.ok schema.validate(%(
+				[ "abc", 123 ]
+			)).valid
 		end
 		
 		t.test "minItems" do |t|
@@ -408,11 +458,61 @@ Tap.test "json-schema" do |t|
 	t.test "object" do |t|
 		
 		t.test "properties" do |t|
-			# TODO
+			schema = JsonSchema.new(%({
+				"properties": {
+					"b": { "type": "boolean" },
+					"i": { "type": "integer" },
+					"n": { "type": "number" },
+					"s": { "type": "string" }
+				}
+			}))
+			
+			t.not_ok schema.validate(%({
+				"b": true
+			})).valid
+			
+			t.ok schema.validate(%({
+				"b": true,
+				"i": 123,
+				"n": 1.23,
+				"s": "abc"
+			})).valid
 		end
 		
 		t.test "additionalProperties" do |t|
-			# TODO
+			# no additional properties are allowed, over those specified in "properties"
+			schema = JsonSchema.new(%({
+				"properties": {
+					"a": { "type": "string" }
+				},
+				"additionalProperties": false
+			}))
+			
+			t.not_ok schema.validate(%(
+				{ "a": "abc", "b": "def" }
+			)).valid
+			
+			t.ok schema.validate(%(
+				{ "a": "abc" }
+			)).valid
+			
+			# additional properties are allowed, as long as they are integers
+			schema = JsonSchema.new(%({
+				"properties": {
+					"a": { "type": "string" }
+				},
+				"additionalProperties": {
+					"type": "integer"
+				}
+			}))
+			
+			t.not_ok schema.validate(%(
+				{ "a": "abc", "b": "def" }
+			)).valid
+			
+			t.ok schema.validate(%(
+				{ "a": "abc", "b": 123 }
+			)).valid
 		end
 		
 		t.test "minProperties" do |t|
@@ -446,6 +546,27 @@ Tap.test "json-schema" do |t|
 	
 	t.test "strings" do |t|
 		
+		t.test "format" do |t|
+			schema = JsonSchema.new(%({
+				"format": "date-time"
+			}))
+			
+			# not a valid full ISO datetime (not including timezone/offset)
+			t.not_ok schema.validate(%(
+				"2001-02-03T04:05:06.789"
+			)).valid
+			
+			# valid full ISO datetime (including 'Z' timezone)
+			t.ok schema.validate(%(
+				"2001-02-03T04:05:06.789Z"
+			)).valid
+			
+			# valid full ISO datetime (including offset)
+			t.ok schema.validate(%(
+				"2001-02-03T04:05:06.789+01:30"
+			)).valid
+		end
+		
 		t.test "minLength" do |t|
 			schema = JsonSchema.new(%({
 				"minLength": 3
@@ -473,6 +594,20 @@ Tap.test "json-schema" do |t|
 				"abc"
 			)).valid
 		end
+		
+		t.test "pattern" do |t|
+			schema = JsonSchema.new(%({
+				"pattern": "^[A-Z]+$"
+			}))
+			
+			t.not_ok schema.validate(%(
+				"abc"
+			)).valid
+			
+			t.ok schema.validate(%(
+				"ABC"
+			)).valid
+		end
 	end
 	
 	t.test "sub-schemas" do |t|
@@ -480,13 +615,11 @@ Tap.test "json-schema" do |t|
 		t.test "allOf" do |t|
 			schema = JsonSchema.new(%({
 				"type": "string",
-				"allOf": [{
-					"enum": [ "abc", "def" ]
-				},{
-					"enum": [ "abc", "ghi" ]
-				},{
-					"enum": [ "abc", "jkl" ]
-				}]
+				"allOf": [
+					{ "enum": [ "abc", "def" ] },
+					{ "enum": [ "abc", "ghi" ] },
+					{ "enum": [ "abc", "jkl" ] }
+				]
 			}))
 			
 			t.not_ok schema.validate(%(
@@ -501,13 +634,11 @@ Tap.test "json-schema" do |t|
 		t.test "anyOf" do |t|
 			schema = JsonSchema.new(%({
 				"type": "string",
-				"anyOf": [{
-					"enum": [ "abc", "def" ]
-				},{
-					"enum": [ "abc", "ghi" ]
-				},{
-					"enum": [ "abc", "jkl" ]
-				}]
+				"anyOf": [
+					{ "enum": [ "abc", "def" ] },
+					{ "enum": [ "abc", "ghi" ] },
+					{ "enum": [ "abc", "jkl" ] }
+				]
 			}))
 			
 			t.not_ok schema.validate(%(
@@ -522,13 +653,11 @@ Tap.test "json-schema" do |t|
 		t.test "oneOf" do |t|
 			schema = JsonSchema.new(%({
 				"type": "string",
-				"oneOf": [{
-					"enum": [ "abc", "def" ]
-				},{
-					"enum": [ "abc", "ghi" ]
-				},{
-					"enum": [ "abc", "jkl" ]
-				}]
+				"oneOf": [
+					{ "enum": [ "abc", "def" ] },
+					{ "enum": [ "abc", "ghi" ] },
+					{ "enum": [ "abc", "jkl" ] }
+				]
 			}))
 			
 			t.not_ok schema.validate(%(
