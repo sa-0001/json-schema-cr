@@ -1,5 +1,5 @@
 name: json-schema
-version: 0.0.2
+version: 0.0.3
 authors:
   - sa-0001
 description: |
@@ -11,9 +11,9 @@ crystal: 0.35.1
 dependencies:
   json-typeof:
     github: sa-0001/json-typeof-cr
-    version: ~> 0.0.2
+    version: ~> 0.0.3
 
 development_dependencies:
   tap:
     github: sa-0001/tap-cr
-    version: ~> 0.0.1
+    version: ~> 0.0.2
